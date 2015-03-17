@@ -1,0 +1,68 @@
+<!--if --> 
+{% if user %}
+	Hello, {{ user }}
+{% else %}
+	Hello, Stranger
+{% endif %}
+
+<!--for-->
+<ul>
+	{% for comment in comments %}
+		<li>{{ comment }}</li>
+	{% endfor %}
+</ul>
+
+<!--macro -->
+
+{%  macro render_comment(comment) %}
+	<li>{{ comment }}</li>
+{% endmacro %}
+
+<ul>
+	{% for comment in comments %}
+		{{ render_comment(comment) }}
+	{% endfor %}
+</ul>
+
+<!--macro 2 -->
+{% import 'macros.html' as macros %}
+<ul>
+	{% for comment in comments %}
+		{{ macros.render_comment(comment) }}
+	{% endfor %}
+</ul>
+
+
+<!-- all template -->
+{% include 'comment.html' %}
+
+
+<!-- inherit the template -->
+
+<!-- base.html -->
+<html>
+	<head>
+		{% block head %}
+		<title>{% block title %}{% endblock %} - My Application</title>
+		{% endblock %}
+	</head>
+	<body>
+		{% block body %}
+		{% endblock %}
+	</body>
+</html>
+
+<!--inherit the base.html -->
+<!DOCTYPE html>
+{% extends "base.html" %}
+
+{% block title %}Index{% endblock %}
+{% block head %}
+	{{ super() }}
+	<style>
+	</style>
+{% endblock %}
+
+{% block body %}
+<h1>Hello, World!</h1>
+{% endblock %}
