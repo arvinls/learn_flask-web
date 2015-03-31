@@ -9,6 +9,22 @@ from .forms import LoginForm, RegistrationForm, ChangePasswordForm, \
 from ..email import send_email
 from flask.ext.login import current_user
 
+@auth.before_app_request
+def before_request():
+	if current_user.is_authenticated():
+	 	current_user.ping()
+	 	if not current_user.confirmed \
+				and request.endpoint[:5] != 'auth.'\
+				and request.endpoint != 'static':
+			return redirect(url_for('auth.unconfirmed'))
+
+@auth.route('/unconfirmed')
+def unconfirmed():
+	if current_user.is_anonymous() or current_user.confirmed:
+		return redirect(url_for('main.index'))
+	return render_template('auth/unconfirmed.html')
+
+
 @auth.route('/login', methods=['GET', 'POST'])
 def login():
 	form = LoginForm()
@@ -44,7 +60,7 @@ def register():
 					'auth/email/confirm', user=user, token=token)
 
 		flash("A confirmation email has been sent to you by email")
-		return redirect(url_for('main.index'))
+		return redirect(url_for('auth.login'))
 	return render_template('auth/register.html', form=form)
 
 @auth.route('/confirm/<token>')
@@ -53,34 +69,22 @@ def confirm(token):
 	if current_user.confirmed:
 		return redirect(url_for('main.index'))
 	if current_user.confirm(token):
-		flask('You have confirmed your account. Thanks!')
+		flash('You have confirmed your account. Thanks!')
 	else:
-		flask('The confirmation link is invalid or has expired.')
+		flash('The confirmation link is invalid or has expired.')
 	return redirect(url_for('main.index'))
 
-@auth.before_app_request
-def before_request():
-	if current_user.is_authenticated() \
-			and not current_user.confirmed \
-			and request.endpoint[:5] != 'auth.'\
-			and request.endpoint != 'static':
-		return redirect(url_for('auth.unconfirmed'))
-
-@auth.route('/unconfirmed')
-def unconfirmed():
-	if current_user.is_anonymous() or current_user.confirmed:
-		return redirect(url_for('main.index'))
-	return render_template('auth/unconfirmed.html')
 
 @auth.route('/confirm')
 @login_required
 def resend_confirmation():
-	token = current_user.generate_confirmation_token
+	token = current_user.generate_confirmation_token()
+	
 	send_email(current_user.email, 'Confirm Your Account', 'auth/email/confirm', user=current_user, token=token)
 	flash('A new confirmation email has been sent to you by email.')
 	return redirect(url_for('main.index'))
 
-@auth.route('/change_password', methods=['GET', 'POST'])
+@auth.route('/change-password', methods=['GET', 'POST'])
 @login_required
 def change_password():
 	form = ChangePasswordForm()
@@ -88,7 +92,7 @@ def change_password():
 		if current_user.varify_password(form.old_password.data):
 			current_user.password = form.password.data
 			db.session.add(current_user)
-			flask('Your password has been updated.')
+			flash('Your password has been updated.')
 			return redirect(url_for('main.index'))
 		else:
 			flash('Invalid password.')

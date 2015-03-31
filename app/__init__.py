@@ -6,15 +6,17 @@ from flask.ext.sqlalchemy import SQLAlchemy
 from config import config
 from flask.ext.login import LoginManager
 
-login_manager = LoginManager()
-login_manager.session_protection = 'strong'
-login_manager.login_view = 'auth.login'
 
 
 bootstrap = Bootstrap()
 mail = Mail()
 moment = Moment()
 db = SQLAlchemy()
+
+login_manager = LoginManager()
+login_manager.session_protection = 'strong'
+login_manager.login_view = 'auth.login'
+
 
 def create_app(config_name):
 
@@ -35,6 +37,5 @@ def create_app(config_name):
 
 	from .auth import auth as auth_blueprint
 	app.register_blueprint(auth_blueprint, url_prefix = '/auth')
-	#add the route and deal_error html
 
 	return app
