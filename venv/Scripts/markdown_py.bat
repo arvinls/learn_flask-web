@@ -1,0 +1,1 @@
+@"D:\flask\arvin\venv\Scripts\python.exe" "D:\flask\arvin\venv\Scripts\markdown_py" %*

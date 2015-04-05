@@ -8,6 +8,7 @@ class Config:
 	
 	FLASKY_MAIL_SENDER = 'Flasky Admin <pythonweb@126.com>'
 	FLASKY_ADMIN = os.environ.get('FLASKY_ADMIN')
+	FLASKY_POSTS_PER_PAGE = 20
 	MAIL_SERVER = 'smtp.126.com'
 	MAIL_PORT = 465
 	MAIL_USE_SSL = True
