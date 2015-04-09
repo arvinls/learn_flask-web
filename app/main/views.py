@@ -1,8 +1,8 @@
 from flask import render_template, abort, redirect, url_for, flash, request, current_app, make_response
 from flask.ext.login import login_required, current_user
 from . import main
-from ..models import User, Role, Permission, Post 
-from .forms import EditProfileForm, EditProfileAdminForm, PostForm
+from ..models import User, Role, Permission, Post, Comment  
+from .forms import EditProfileForm, EditProfileAdminForm, PostForm, CommentForm
 from .. import db
 from ..decorators import admin_required, permission_required
 
@@ -30,10 +30,7 @@ def index():
 
 @main.route('/user/<username>')
 def user(username):
-	user = User.query.filter_by(username=username).first()
-	if user is None:
-		abort(404)
-	
+	user = User.query.filter_by(username=username).first_or_404()
 	page = request.args.get('page', 1, type=int)
 	pagination = user.posts.order_by(Post.timestamp.desc()).paginate(
 			page, per_page=current_app.config['FLASKY_POSTS_PER_PAGE'],
@@ -85,10 +82,27 @@ def edit_profile_admin(id):
 	form.about_me.data = user.about_me
 	return render_template('edit_profile.html', form=form, user=user)
 
-@main.route('/post/<int:id>')
+@main.route('/post/<int:id>', methods=['GET', 'POST'])
 def post(id):
 	post = Post.query.get_or_404(id)
-	return render_template('post.html', posts=[post])
+	form = CommentForm()
+	if form.validate_on_submit():
+		comment = Comment(body=form.body.data,
+						post=post,
+						author=current_user._get_current_object())
+		db.session.add(comment)
+		flash('You comment has been published.')
+		return redirect(url_for('.post', id=post.id, page=-1))
+	page = request.args.get('page', 1, type=int)
+	if page == -1:
+		page = (post.comments.count() - 1) / \
+				current_app.config['FLASKY_COMMENTS_PER_PAGE'] + 1
+	pagination = post.comments.order_by(Comment.timestamp.asc()).paginate(
+		page, per_page=current_app.config['FLASKY_COMMENTS_PER_PAGE'],
+		error_out=False)
+	comments = pagination.items
+	return render_template('post.html', posts=[post], form=form,
+							comments=comments, pagination=pagination)
 
 @main.route('/edit/<int:id>', methods=['GET', 'POST'])
 @login_required
@@ -136,7 +150,7 @@ def unfollow(username):
 	return redirect(url_for('.user', username=username))
 
 @main.route('/followers/<username>')
-def follower(username):
+def followers(username):
 	user = User.query.filter_by(username=username).first()
 	if user is None:
 		flash('Invalid user')
@@ -158,9 +172,9 @@ def followed_by(username):
 	page = request.args.get('page', 1, type=int)
 	pagination = user.followed.paginate(
 						page, per_page=current_app.config['FLASKY_FOLLOWERS_PER_PAGE'],
-						error_out=Flase)
+						error_out=False)
 	follows = [{'user': item.followed, 'timestamp':item.timestamp}
-				for item in pagination.item]
+				for item in pagination.items]
 	return render_template('followers.html', user=user, title="Followed by",
 							endpoint='.followed_by', pagination=pagination,
 							follows=follows)
@@ -178,3 +192,35 @@ def show_followed():
 	resp = make_response(redirect(url_for('.index')))
 	resp.set_cookie('show_followed', '1', max_age=30*24*60*60)
 	return resp
+
+
+@main.route('/moderate')
+@login_required
+@permission_required(Permission.MODERATE_COMMENTS)
+def moderate():
+	page = request.args.get('page', 1, typr=int)
+	pagination = Comment.query.order_by(Comment.timestamp.desc()).paginate(
+		page, per_page=current_app.config['FLASKY_COMMENTS_PER_PAGE'],
+		error_out=False)
+	comments = pagination.items
+	return render_template('moderate.html', comments=comments,
+							 pagination=pagination, page=page)
+
+@main.route('/moderate/enable/<int:id>')
+@login_required
+@permission_required(Permission.MODERATE_COMMENTS)
+def moderate_enable(id):
+	comment = Comment.query.get_or_404(id)
+	comment.disable = False
+	db.session.add(comment)
+	return redirect(url_for('.moderate',
+							page=request.args.get('page', 1, type=int)))
+@main.route('/moderate/disable/<int:id>')
+@login_required
+@permission_required(Permission.MODERATE_COMMENTS)
+def moderate_disable(id):
+	comment = Comment.query.get_or_404(id)
+	comment.disable = True
+	db.session.add(comment)
+	return redirect(url_for('.moderate',
+							page=request.args.get('page', 1, type=int)))
