@@ -24,10 +24,10 @@ from . import __version__
 from . import certs
 from .compat import parse_http_list as _parse_list_header
 from .compat import (quote, urlparse, bytes, str, OrderedDict, unquote, is_py2,
-                     builtin_str, getproxies, proxy_bypass, urlunparse)
+                     builtin_str, getproxies, proxy_bypass)
 from .cookies import RequestsCookieJar, cookiejar_from_dict
 from .structures import CaseInsensitiveDict
-from .exceptions import InvalidURL
+from .exceptions import MissingSchema, InvalidURL
 
 _hush_pyflakes = (RequestsCookieJar,)
 
@@ -61,9 +61,8 @@ def super_len(o):
             return os.fstat(fileno).st_size
 
     if hasattr(o, 'getvalue'):
-        # e.g. BytesIO, cStringIO.StringIO
+        # e.g. BytesIO, cStringIO.StringI
         return len(o.getvalue())
-
 
 def get_netrc_auth(url):
     """Returns the Requests tuple auth for a given url from netrc."""
@@ -71,24 +70,16 @@ def get_netrc_auth(url):
     try:
         from netrc import netrc, NetrcParseError
 
+        locations = (os.path.expanduser('~/{0}'.format(f)) for f in NETRC_FILES)
         netrc_path = None
 
-        for f in NETRC_FILES:
-            try:
-                loc = os.path.expanduser('~/{0}'.format(f))
-            except KeyError:
-                # os.path.expanduser can fail when $HOME is undefined and
-                # getpwuid fails. See http://bugs.python.org/issue20164 &
-                # https://github.com/kennethreitz/requests/issues/1846
-                return
-
-            if os.path.exists(loc):
+        for loc in locations:
+            if os.path.exists(loc) and not netrc_path:
                 netrc_path = loc
-                break
 
         # Abort early if there isn't one.
         if netrc_path is None:
-            return
+            return netrc_path
 
         ri = urlparse(url)
 
@@ -466,10 +457,9 @@ def is_valid_cidr(string_network):
     return True
 
 
-def should_bypass_proxies(url):
-    """
-    Returns whether we should bypass proxies or not.
-    """
+def get_environ_proxies(url):
+    """Return a dict of environment proxies."""
+
     get_proxy = lambda k: os.environ.get(k) or os.environ.get(k.upper())
 
     # First check whether no_proxy is defined. If it is, check that the URL
@@ -487,36 +477,23 @@ def should_bypass_proxies(url):
             for proxy_ip in no_proxy:
                 if is_valid_cidr(proxy_ip):
                     if address_in_network(ip, proxy_ip):
-                        return True
+                        return {}
         else:
             for host in no_proxy:
                 if netloc.endswith(host) or netloc.split(':')[0].endswith(host):
                     # The URL does match something in no_proxy, so we don't want
                     # to apply the proxies on this URL.
-                    return True
+                    return {}
 
     # If the system proxy settings indicate that this URL should be bypassed,
     # don't proxy.
-    # The proxy_bypass function is incredibly buggy on OS X in early versions
-    # of Python 2.6, so allow this call to fail. Only catch the specific
-    # exceptions we've seen, though: this call failing in other ways can reveal
-    # legitimate problems.
-    try:
-        bypass = proxy_bypass(netloc)
-    except (TypeError, socket.gaierror):
-        bypass = False
-
-    if bypass:
-        return True
-
-    return False
-
-def get_environ_proxies(url):
-    """Return a dict of environment proxies."""
-    if should_bypass_proxies(url):
+    if proxy_bypass(netloc):
         return {}
-    else:
-        return getproxies()
+
+    # If we get here, we either didn't have no_proxy set or we're not going
+    # anywhere that no_proxy applies to, and the system settings don't require
+    # bypassing the proxy for the current URL.
+    return getproxies()
 
 
 def default_user_agent(name="python-requests"):
@@ -553,7 +530,7 @@ def default_user_agent(name="python-requests"):
 def default_headers():
     return CaseInsensitiveDict({
         'User-Agent': default_user_agent(),
-        'Accept-Encoding': ', '.join(('gzip', 'deflate')),
+        'Accept-Encoding': ', '.join(('gzip', 'deflate', 'compress')),
         'Accept': '*/*'
     })
 
@@ -627,31 +604,24 @@ def guess_json_utf(data):
     return None
 
 
-def prepend_scheme_if_needed(url, new_scheme):
-    '''Given a URL that may or may not have a scheme, prepend the given scheme.
-    Does not replace a present scheme with the one provided as an argument.'''
-    scheme, netloc, path, params, query, fragment = urlparse(url, new_scheme)
+def except_on_missing_scheme(url):
+    """Given a URL, raise a MissingSchema exception if the scheme is missing.
+    """
+    scheme, netloc, path, params, query, fragment = urlparse(url)
 
-    # urlparse is a finicky beast, and sometimes decides that there isn't a
-    # netloc present. Assume that it's being over-cautious, and switch netloc
-    # and path if urlparse decided there was no netloc.
-    if not netloc:
-        netloc, path = path, netloc
-
-    return urlunparse((scheme, netloc, path, params, query, fragment))
+    if not scheme:
+        raise MissingSchema('Proxy URLs must have explicit schemes.')
 
 
 def get_auth_from_url(url):
     """Given a url with authentication components, extract them into a tuple of
     username,password."""
-    parsed = urlparse(url)
-
-    try:
-        auth = (unquote(parsed.username), unquote(parsed.password))
-    except (AttributeError, TypeError):
-        auth = ('', '')
-
-    return auth
+    if url:
+        url = unquote(url)
+        parsed = urlparse(url)
+        return (parsed.username, parsed.password)
+    else:
+        return ('', '')
 
 
 def to_native_string(string, encoding='ascii'):
